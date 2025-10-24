@@ -1,48 +1,41 @@
-import axios from 'axios';
 import { Audio } from 'expo-av';
-import {
-  ELEVEN_LABS_API_KEY,
-  ELEVEN_LABS_API_URL,
-  ELEVEN_LABS_VOICES,
-} from '../constants/config';
+import { ELEVEN_LABS_VOICES, SUPABASE_URL, SUPABASE_ANON_KEY } from '../constants/config';
 
 /**
- * Convert text to speech using Eleven Labs API
+ * Convert text to speech using Supabase Edge Function (secure)
  * @param {string} text - The text to convert to speech
  * @param {string} voiceId - The Eleven Labs voice ID
  * @returns {Promise<string>} - Base64 encoded audio data
  */
 export const textToSpeech = async (text, voiceId = ELEVEN_LABS_VOICES.ADAM.id) => {
   try {
-    if (!ELEVEN_LABS_API_KEY) {
-      throw new Error('Eleven Labs API key not configured. Please add it to src/constants/config.js');
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      throw new Error('Supabase configuration missing. Please add SUPABASE_URL and SUPABASE_ANON_KEY to src/constants/config.js');
     }
 
-    const response = await axios.post(
-      `${ELEVEN_LABS_API_URL}/text-to-speech/${voiceId}`,
+    // Call Supabase Edge Function instead of Eleven Labs directly
+    const response = await fetch(
+      `${SUPABASE_URL}/functions/v1/text-to-speech`,
       {
-        text: text,
-        model_id: 'eleven_monolingual_v1',
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75,
-          style: 0,
-          use_speaker_boost: true,
-        },
-      },
-      {
+        method: 'POST',
         headers: {
-          'Accept': 'audio/mpeg',
           'Content-Type': 'application/json',
-          'xi-api-key': ELEVEN_LABS_API_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         },
-        responseType: 'arraybuffer',
+        body: JSON.stringify({
+          text: text,
+          voiceId: voiceId,
+        }),
       }
     );
 
-    // Convert arraybuffer to base64
-    const base64Audio = Buffer.from(response.data, 'binary').toString('base64');
-    return `data:audio/mpeg;base64,${base64Audio}`;
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to generate speech');
+    }
+
+    const data = await response.json();
+    return data.audio;
   } catch (error) {
     console.error('Error converting text to speech:', error);
     throw error;

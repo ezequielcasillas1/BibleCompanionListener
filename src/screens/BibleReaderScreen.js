@@ -14,7 +14,7 @@ import {
 import { fetchChapter, BIBLE_BOOKS, BIBLE_VERSIONS } from '../services/bibleApi';
 import { AudioPlayer } from '../services/elevenLabs';
 import VoiceSelector from '../components/VoiceSelector';
-import { COLORS, ELEVEN_LABS_VOICES, ELEVEN_LABS_API_KEY } from '../constants/config';
+import { COLORS, ELEVEN_LABS_VOICES, SUPABASE_ANON_KEY } from '../constants/config';
 
 export default function BibleReaderScreen() {
   const [version, setVersion] = useState(BIBLE_VERSIONS.ESV);
@@ -112,10 +112,10 @@ export default function BibleReaderScreen() {
 
   // Play/Pause audio
   const handlePlayPause = async () => {
-    if (!ELEVEN_LABS_API_KEY) {
+    if (!SUPABASE_ANON_KEY) {
       Alert.alert(
-        'API Key Required',
-        'Please add your Eleven Labs API key to src/constants/config.js to use text-to-speech features.'
+        'Configuration Required',
+        'Please add your Supabase anon key to src/constants/config.js and deploy the Edge Function to use text-to-speech features.'
       );
       return;
     }
@@ -150,7 +150,7 @@ export default function BibleReaderScreen() {
       console.error('Error playing audio:', error);
       Alert.alert(
         'Audio Error',
-        'Failed to play audio. Please check your Eleven Labs API key and try again.'
+        'Failed to play audio. Please check your Supabase configuration and Edge Function deployment.'
       );
     }
   };
