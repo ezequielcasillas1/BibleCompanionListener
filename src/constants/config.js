@@ -1,6 +1,6 @@
 // Supabase configuration
 export const SUPABASE_URL = 'https://wdihmeqhrjlbfozmyjik.supabase.co';
-export const SUPABASE_ANON_KEY = ''; // Add your Supabase anon key here
+export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkaWhtZXFocmpsYmZvem15amlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyNTgwMjIsImV4cCI6MjA3NjgzNDAyMn0.xN2qvDXX9mGV3ZR7gVRCLBVFiBst880UxvYrCAO8_Oo';
 
 // Bible API configuration
 export const BIBLE_API_BASE_URL = 'https://bible.helloao.org/api';
