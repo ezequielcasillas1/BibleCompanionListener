@@ -5,6 +5,10 @@ export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 // Bible API configuration
 export const BIBLE_API_BASE_URL = 'https://bible.helloao.org/api';
 
+// AI Configuration (for custom Bible plans)
+// API key stored securely in Supabase Edge Function secrets
+export const AI_PLAN_ENABLED = true;
+
 // Eleven Labs configuration
 export const ELEVEN_LABS_API_KEY = ''; // Add your Eleven Labs API key here
 export const ELEVEN_LABS_API_URL = 'https://api.elevenlabs.io/v1';
