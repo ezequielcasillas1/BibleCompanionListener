@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,12 @@ import {
   SafeAreaView,
   StatusBar,
   Alert,
+  Slider,
 } from 'react-native';
 import { fetchChapter, BIBLE_BOOKS, BIBLE_VERSIONS } from '../services/bibleApi';
-import { COLORS } from '../constants/config';
+import { AudioPlayer } from '../services/elevenLabs';
+import VoiceSelector from '../components/VoiceSelector';
+import { COLORS, ELEVEN_LABS_VOICES, ELEVEN_LABS_API_KEY } from '../constants/config';
 
 export default function BibleReaderScreen() {
   const [version, setVersion] = useState(BIBLE_VERSIONS.ESV);
@@ -20,7 +23,28 @@ export default function BibleReaderScreen() {
   const [bibleText, setBibleText] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Audio states
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState(ELEVEN_LABS_VOICES.ADAM.id);
+  const [showVoiceSelector, setShowVoiceSelector] = useState(false);
+  const [playbackPosition, setPlaybackPosition] = useState(0);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1.0);
+
+  const audioPlayer = useRef(new AudioPlayer()).current;
+
   const currentBook = BIBLE_BOOKS[currentBookIndex];
+
+  // Initialize audio player
+  useEffect(() => {
+    audioPlayer.initialize();
+
+    return () => {
+      // Cleanup audio on unmount
+      audioPlayer.stop();
+    };
+  }, []);
 
   // Load initial chapter
   useEffect(() => {
@@ -29,6 +53,11 @@ export default function BibleReaderScreen() {
 
   const loadChapter = async () => {
     setLoading(true);
+    // Stop any playing audio when loading new chapter
+    if (isPlaying) {
+      await handleStopAudio();
+    }
+
     try {
       const data = await fetchChapter(version, currentBook.abbr, currentChapter);
       setBibleText(data);
@@ -66,6 +95,103 @@ export default function BibleReaderScreen() {
     setVersion(version === BIBLE_VERSIONS.ESV ? BIBLE_VERSIONS.NKJV : BIBLE_VERSIONS.ESV);
   };
 
+  // Audio playback status update callback
+  const onPlaybackStatusUpdate = (status) => {
+    if (status.isLoaded) {
+      setPlaybackPosition(status.positionMillis);
+      setPlaybackDuration(status.durationMillis);
+
+      if (status.didJustFinish) {
+        setIsPlaying(false);
+        setPlaybackPosition(0);
+        // Auto-advance to next chapter
+        goToNextChapter();
+      }
+    }
+  };
+
+  // Play/Pause audio
+  const handlePlayPause = async () => {
+    if (!ELEVEN_LABS_API_KEY) {
+      Alert.alert(
+        'API Key Required',
+        'Please add your Eleven Labs API key to src/constants/config.js to use text-to-speech features.'
+      );
+      return;
+    }
+
+    if (!bibleText || !bibleText.text) {
+      Alert.alert('Error', 'No Bible text available to play.');
+      return;
+    }
+
+    try {
+      if (isPlaying) {
+        // Pause
+        await audioPlayer.pause();
+        setIsPlaying(false);
+      } else if (audioPlayer.sound) {
+        // Resume
+        await audioPlayer.play();
+        setIsPlaying(true);
+      } else {
+        // Start new playback
+        setIsLoadingAudio(true);
+        await audioPlayer.playFromText(
+          bibleText.text,
+          selectedVoice,
+          onPlaybackStatusUpdate
+        );
+        setIsPlaying(true);
+        setIsLoadingAudio(false);
+      }
+    } catch (error) {
+      setIsLoadingAudio(false);
+      console.error('Error playing audio:', error);
+      Alert.alert(
+        'Audio Error',
+        'Failed to play audio. Please check your Eleven Labs API key and try again.'
+      );
+    }
+  };
+
+  // Stop audio
+  const handleStopAudio = async () => {
+    await audioPlayer.stop();
+    setIsPlaying(false);
+    setPlaybackPosition(0);
+  };
+
+  // Change playback speed
+  const handleSpeedChange = async (rate) => {
+    setPlaybackRate(rate);
+    if (audioPlayer.sound) {
+      await audioPlayer.setRate(rate);
+    }
+  };
+
+  // Format time for display
+  const formatTime = (millis) => {
+    const minutes = Math.floor(millis / 60000);
+    const seconds = ((millis % 60000) / 1000).toFixed(0);
+    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+  };
+
+  const getSpeedLabel = () => {
+    if (playbackRate === 0.75) return '0.75x';
+    if (playbackRate === 1.0) return '1x';
+    if (playbackRate === 1.25) return '1.25x';
+    if (playbackRate === 1.5) return '1.5x';
+    return `${playbackRate}x`;
+  };
+
+  const cycleSpeed = () => {
+    const speeds = [0.75, 1.0, 1.25, 1.5];
+    const currentIndex = speeds.indexOf(playbackRate);
+    const nextSpeed = speeds[(currentIndex + 1) % speeds.length];
+    handleSpeedChange(nextSpeed);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
@@ -74,9 +200,17 @@ export default function BibleReaderScreen() {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.appTitle}>Bible Companion Listener</Text>
-          <TouchableOpacity onPress={toggleVersion} style={styles.versionButton}>
-            <Text style={styles.versionButtonText}>{version}</Text>
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              onPress={() => setShowVoiceSelector(true)}
+              style={styles.voiceButton}
+            >
+              <Text style={styles.voiceButtonText}>🎙</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={toggleVersion} style={styles.versionButton}>
+              <Text style={styles.versionButtonText}>{version}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.referenceContainer}>
@@ -115,22 +249,70 @@ export default function BibleReaderScreen() {
         )}
       </ScrollView>
 
-      {/* Audio Player Placeholder */}
+      {/* Audio Player */}
       <View style={styles.audioPlayerContainer}>
-        <Text style={styles.audioPlaceholderText}>
-          Audio player will be added here (Eleven Labs integration)
-        </Text>
-        <View style={styles.audioControlsPlaceholder}>
-          <TouchableOpacity style={styles.audioButton}>
-            <Text style={styles.audioButtonText}>⏮</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.audioButton, styles.playButton]}>
-            <Text style={styles.playButtonText}>▶</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.audioButton}>
-            <Text style={styles.audioButtonText}>⏭</Text>
-          </TouchableOpacity>
-        </View>
+        {isLoadingAudio ? (
+          <View style={styles.audioLoadingContainer}>
+            <ActivityIndicator size="small" color={COLORS.accent} />
+            <Text style={styles.audioLoadingText}>Generating audio...</Text>
+          </View>
+        ) : (
+          <>
+            {/* Progress Bar */}
+            {playbackDuration > 0 && (
+              <View style={styles.progressContainer}>
+                <Text style={styles.timeText}>{formatTime(playbackPosition)}</Text>
+                <View style={styles.progressBarContainer}>
+                  <View
+                    style={[
+                      styles.progressBar,
+                      { width: `${(playbackPosition / playbackDuration) * 100}%` },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.timeText}>{formatTime(playbackDuration)}</Text>
+              </View>
+            )}
+
+            {/* Audio Controls */}
+            <View style={styles.audioControls}>
+              <TouchableOpacity
+                style={styles.audioButton}
+                onPress={goToPreviousChapter}
+                disabled={currentBookIndex === 0 && currentChapter === 1}
+              >
+                <Text style={styles.audioButtonText}>⏮</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.audioButton, styles.playButton]}
+                onPress={handlePlayPause}
+              >
+                <Text style={styles.playButtonText}>
+                  {isPlaying ? '⏸' : '▶'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.audioButton}
+                onPress={goToNextChapter}
+                disabled={
+                  currentBookIndex === BIBLE_BOOKS.length - 1 &&
+                  currentChapter === currentBook.chapters
+                }
+              >
+                <Text style={styles.audioButtonText}>⏭</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Speed Control */}
+            <View style={styles.speedContainer}>
+              <TouchableOpacity onPress={cycleSpeed} style={styles.speedButton}>
+                <Text style={styles.speedButtonText}>Speed: {getSpeedLabel()}</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </View>
 
       {/* Navigation Controls */}
@@ -168,6 +350,14 @@ export default function BibleReaderScreen() {
           <Text style={styles.navButtonText}>Next →</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Voice Selector Modal */}
+      <VoiceSelector
+        visible={showVoiceSelector}
+        onClose={() => setShowVoiceSelector(false)}
+        selectedVoice={selectedVoice}
+        onSelectVoice={setSelectedVoice}
+      />
     </SafeAreaView>
   );
 }
@@ -200,6 +390,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: COLORS.primary,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  voiceButton: {
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+  },
+  voiceButtonText: {
+    fontSize: 16,
   },
   versionButton: {
     backgroundColor: COLORS.accent,
@@ -273,17 +476,45 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 5,
   },
-  audioPlaceholderText: {
-    fontSize: 12,
-    color: COLORS.text.light,
-    textAlign: 'center',
+  audioLoadingContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  audioLoadingText: {
+    marginLeft: 10,
+    fontSize: 14,
+    color: COLORS.text.secondary,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 15,
   },
-  audioControlsPlaceholder: {
+  progressBarContainer: {
+    flex: 1,
+    height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    marginHorizontal: 10,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: COLORS.accent,
+  },
+  timeText: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+    minWidth: 40,
+  },
+  audioControls: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 20,
+    marginBottom: 10,
   },
   audioButton: {
     width: 50,
@@ -306,6 +537,20 @@ const styles = StyleSheet.create({
   playButtonText: {
     fontSize: 24,
     color: COLORS.white,
+  },
+  speedContainer: {
+    alignItems: 'center',
+  },
+  speedButton: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    backgroundColor: COLORS.background,
+    borderRadius: 15,
+  },
+  speedButtonText: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+    fontWeight: '600',
   },
   navigationContainer: {
     flexDirection: 'row',
